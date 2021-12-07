@@ -1,7 +1,5 @@
 import os
 import json
-import time
-import datetime
 import inquirer
 from dotenv import load_dotenv
 
@@ -9,15 +7,13 @@ from utils import HTTPRequest
 
 load_dotenv(verbose=True)
 
-if os.getenv('ID') is None or os.getenv('PASSWORD') is None:
+if os.getenv("ID") is None or os.getenv("PASSWORD") is None:
     print("* 절대 아이디나 비밀번호 등 개인정보를 기록하지 않습니다. *")
-    inputInfo = inquirer.prompt([
-        inquirer.Text('id', message='아이디를 입력하세요. '),
-        inquirer.Text('password', message='비밀번호를 입력하세요. '),
-    ])
-    with open('./.env', 'w', encoding='utf-8') as f:
-        f.write(f'ID={inputInfo["id"]}\nPASSWORD={inputInfo["password"]}')
-    os.system('cls' if os.name == 'nt' else 'clear')
+    userId = input("아이디를 입력하세요 : ")
+    userPassword = input("비밀번호를 입력하세요 : ")
+    with open("./.env", "w", encoding="utf-8") as f:
+        f.write(f"ID={userId}\nPASSWORD={userPassword}")
+    os.system("cls" if os.name == "nt" else "clear")
 
 try:
     with open("./config.json", "r", encoding="utf-8") as f:
@@ -40,16 +36,16 @@ def createToken() -> str:
     config["schoolCode"] = request["data"]["memberInfo"]["memberSchoolInfo"][
         "schoolCode"
     ]
-    for i in range(1, 6):
+    for grade in range(1, 6):
         if (
             request["data"]["memberInfo"]["memberSchoolInfo"].get(
-                f"memberSchoolGrd{i}Yn"
+                f"memberSchoolGrd{grade}Yn"
             )
             == "Y"
         ):
             config[
                 "schlGrdCd"
-            ] = f'{request["data"]["memberInfo"]["memberSchoolInfo"]["schoolTypeCode"]}0{i}'
+            ] = f'{request["data"]["memberInfo"]["memberSchoolInfo"]["schoolTypeCode"]}0{grade}'
     config["userSequenceNo"] = request["data"]["memberInfo"]["memberSeq"]
     with open("./config.json", "w", encoding="utf-8") as w:
         json.dump(config, w, ensure_ascii=False, indent=4)
@@ -79,8 +75,8 @@ with open("./config.json", "r", encoding="utf-8") as f:
 menus = ["과목 조회 및 수업들 조회하기", "나가기"]
 
 
-def getSubjects(pageNum: int):
-    subjects = HTTPRequest(
+def getClasses(pageNum: int):
+    _classes = HTTPRequest(
         url=f'https://{config["DNS"]}.ebsoc.co.kr/cls/api/v1/school/schoolClassList/paged',
         method="POST",
         json={
@@ -96,7 +92,15 @@ def getSubjects(pageNum: int):
         },
         headers={"X-AUTH-TOKEN": TOKEN},
     )
-    return subjects
+    return _classes
+
+
+def getSubjects(classId: str, pageNum: int):
+    return HTTPRequest(
+        f'https://{config["DNS"]}.ebsoc.co.kr/lecture/api/v1/{classId}/lesson/list/paged?openYn=Y&pageNo={pageNum}',
+        method="GET",
+        headers={"X-AUTH-TOKEN": TOKEN},
+    )
 
 
 while True:
@@ -113,13 +117,12 @@ while True:
         exit()
     if menu["menu"] == menus[0]:
         presentPageNum = 1
-        classInformations = {}
-        firstRequest = getSubjects(presentPageNum)
+        firstRequest = getClasses(presentPageNum)
+        classInformations = {presentPageNum: firstRequest["data"]["list"]}
         lastPage = firstRequest["data"]["lastPage"]
-        classInformations[presentPageNum] = firstRequest["data"]["list"]
         while True:
             if classInformations.get(presentPageNum) is None:
-                Page = getSubjects(presentPageNum)
+                Page = getClasses(presentPageNum)
                 classInformations[presentPageNum] = Page["data"]["list"]
             classes = list(
                 map(lambda z: z["className"], classInformations[presentPageNum])
@@ -133,7 +136,7 @@ while True:
                 [
                     inquirer.List(
                         "class",
-                        message="어떤 과목을 선택하시겠습니까?",
+                        message="어떤 교실을 선택하시겠습니까?",
                         choices=classes,
                     )
                 ]
@@ -156,3 +159,51 @@ while True:
                 exit()
             elif classSelect == f"[ {presentPageNum} / {lastPage} ]":
                 continue
+            else:
+                for i in classInformations[presentPageNum]:
+                    if i["className"] == classSelect:
+                        classUrlPath = i["classUrlPath"]
+                        presentSubjectPage = 1
+                        firstSubjectRequest = getSubjects(classUrlPath, presentSubjectPage)
+                        try:
+                            lastSubjectPage = firstSubjectRequest["data"]["lastPage"]
+                        except KeyError:
+                            print("수강 가능한 강좌가 없습니다.")
+                            continue
+                        try:
+                            subjectInformations = {presentSubjectPage: firstSubjectRequest['data']['list']}
+                            print(subjectInformations[presentSubjectPage])
+                        except KeyError:
+                            print("수강 가능한 강좌가 없습니다.")
+                            continue
+                        subjectSelectPages = subjectInformations[presentSubjectPage]
+                        while True:
+                            if subjectInformations.get(presentSubjectPage) is None:
+                                Page = getSubjects(classUrlPath, presentSubjectPage)
+                                subjectInformations[presentSubjectPage] = Page['data']['list']
+                            subjectPages = list(map(lambda x: x["lessonName"], subjectInformations[presentSubjectPage]))
+                            subjectPages.append("이전 페이지")
+                            subjectPages.append("다음 페이지")
+                            subjectPages.append("나가기")
+                            subjectPages.append("종료")
+                            selectSubject = inquirer.prompt([
+                                inquirer.List("subject", message="어떤 과목을 선택하시겠습니까?", choices=subjectPages)
+                            ])
+                            if selectSubject["subject"] == "이전 페이지":
+                                if presentSubjectPage == 1:
+                                    presentSubjectPage = lastSubjectPage
+                                else:
+                                    presentSubjectPage -= 1
+                            elif selectSubject["subject"] == "다음 페이지":
+                                if presentSubjectPage == lastSubjectPage:
+                                    presentSubjectPage = 1
+                                else:
+                                    presentSubjectPage += 1
+                            elif selectSubject["subject"] == "나가기":
+                                break
+                            elif selectSubject["subject"] == "종료":
+                                exit()
+                            else:
+                                for x in subjectInformations[presentSubjectPage]:
+                                    if x["lessonName"] == selectSubject["subject"]:
+                                        subjectUrlPath = x["lessonUrlPath"]
