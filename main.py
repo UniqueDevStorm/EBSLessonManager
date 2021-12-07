@@ -1,4 +1,6 @@
 import os
+import random
+import sys
 import json
 
 try:
@@ -30,6 +32,10 @@ except FileNotFoundError:
     with open("./config.json", "w", encoding="utf-8") as f:
         f.write("{}")
         config = {}
+
+if os.path.exists('./assets'):
+    os.rmdir('./assets/')
+os.mkdir('./assets/')
 
 
 def createToken() -> str:
@@ -105,7 +111,23 @@ def getClasses(pageNum: int):
 
 def getSubjects(classId: str, pageNum: int):
     return HTTPRequest(
-        f'https://{config["DNS"]}.ebsoc.co.kr/lecture/api/v1/{classId}/lesson/list/paged?openYn=Y&pageNo={pageNum}',
+        url=f'https://{config["DNS"]}.ebsoc.co.kr/lecture/api/v1/{classId}/lesson/list/paged?openYn=Y&pageNo={pageNum}',
+        method="GET",
+        headers={"X-AUTH-TOKEN": TOKEN},
+    )
+
+
+def getLessons(classId: int):
+    return HTTPRequest(
+        url=f'https://{config["DNS"]}.ebsoc.co.kr/lecture/api/v1/sgmssc3a/lesson/lecture/attend/list/{classId}',
+        method="GET",
+        headers={"X-AUTH-TOKEN": TOKEN},
+    )
+
+
+def getLesson(lessonId: int):
+    return HTTPRequest(
+        url=f'https://{config["DNS"]}.ebsoc.co.kr/common/api/v1/lecture/detail/lesson/{lessonId}',
         method="GET",
         headers={"X-AUTH-TOKEN": TOKEN},
     )
@@ -121,8 +143,8 @@ while True:
             ),
         ]
     )
-    if menu["menu"] == "나가기":
-        exit()
+    if menu["menu"] == menus[:-1]:
+        sys.exit()
     if menu["menu"] == menus[0]:
         presentPageNum = 1
         firstRequest = getClasses(presentPageNum)
@@ -164,7 +186,7 @@ while True:
             elif classSelect == "나가기":
                 break
             elif classSelect == "종료":
-                exit()
+                sys.exit()
             elif classSelect == f"[ {presentPageNum} / {lastPage} ]":
                 continue
             else:
@@ -172,15 +194,18 @@ while True:
                     if i["className"] == classSelect:
                         classUrlPath = i["classUrlPath"]
                         presentSubjectPage = 1
-                        firstSubjectRequest = getSubjects(classUrlPath, presentSubjectPage)
+                        firstSubjectRequest = getSubjects(
+                            classUrlPath, presentSubjectPage
+                        )
                         try:
                             lastSubjectPage = firstSubjectRequest["data"]["lastPage"]
                         except KeyError:
                             print("수강 가능한 강좌가 없습니다.")
                             continue
                         try:
-                            subjectInformations = {presentSubjectPage: firstSubjectRequest['data']['list']}
-                            print(subjectInformations[presentSubjectPage])
+                            subjectInformations = {
+                                presentSubjectPage: firstSubjectRequest["data"]["list"]
+                            }
                         except KeyError:
                             print("수강 가능한 강좌가 없습니다.")
                             continue
@@ -188,15 +213,28 @@ while True:
                         while True:
                             if subjectInformations.get(presentSubjectPage) is None:
                                 Page = getSubjects(classUrlPath, presentSubjectPage)
-                                subjectInformations[presentSubjectPage] = Page['data']['list']
-                            subjectPages = list(map(lambda x: x["lessonName"], subjectInformations[presentSubjectPage]))
+                                subjectInformations[presentSubjectPage] = Page["data"][
+                                    "list"
+                                ]
+                            subjectPages = list(
+                                map(
+                                    lambda y: y["lessonName"],
+                                    subjectInformations[presentSubjectPage],
+                                )
+                            )
                             subjectPages.append("이전 페이지")
                             subjectPages.append("다음 페이지")
                             subjectPages.append("나가기")
                             subjectPages.append("종료")
-                            selectSubject = inquirer.prompt([
-                                inquirer.List("subject", message="어떤 과목을 선택하시겠습니까?", choices=subjectPages)
-                            ])
+                            selectSubject = inquirer.prompt(
+                                [
+                                    inquirer.List(
+                                        "subject",
+                                        message="어떤 과목을 선택하시겠습니까?",
+                                        choices=subjectPages,
+                                    )
+                                ]
+                            )
                             if selectSubject["subject"] == "이전 페이지":
                                 if presentSubjectPage == 1:
                                     presentSubjectPage = lastSubjectPage
@@ -210,10 +248,78 @@ while True:
                             elif selectSubject["subject"] == "나가기":
                                 break
                             elif selectSubject["subject"] == "종료":
-                                exit()
+                                sys.exit()
+                            elif classSelect == f"[ {presentSubjectPage} / {lastSubjectPage} ]":
+                                continue
                             else:
                                 for x in subjectInformations[presentSubjectPage]:
                                     if x["lessonName"] == selectSubject["subject"]:
-                                        subjectUrlPath = x["lessonUrlPath"]
+                                        subjectUrlPath = x["lessonSeq"]
+                                        firstLessonRequest = getLessons(subjectUrlPath)
+                                        if len(firstLessonRequest["data"]["list"]) == 0:
+                                            print("수강 가능한 강좌가 없습니다.")
+                                            continue
+                                        LessonList = list(
+                                            map(
+                                                lambda y: y["lessonName"],
+                                                firstLessonRequest["data"]["list"],
+                                            )
+                                        )
+                                        LessonList.append("나가기")
+                                        LessonList.append("종료")
                                         while True:
-                                            pass
+                                            selectLesson = inquirer.prompt(
+                                                [
+                                                    inquirer.List(
+                                                        "lesson",
+                                                        message="어떤 수업을 선택하시겠습니까?",
+                                                        choices=LessonList,
+                                                    )
+                                                ]
+                                            )
+                                            if selectLesson["lesson"] == "나가기":
+                                                break
+                                            elif selectLesson["lesson"] == "종료":
+                                                sys.exit()
+                                            else:
+                                                for z in firstLessonRequest["data"][
+                                                    "list"
+                                                ]:
+                                                    if (
+                                                        z["lessonName"]
+                                                        == selectLesson["lesson"]
+                                                    ):
+                                                        lessonInfo = getLesson(
+                                                            z["lessonSeq"]
+                                                        )
+                                                        if (
+                                                            lessonInfo["data"][
+                                                                "lectureContentsDto"
+                                                            ]["lectureContentsMvpDto"]
+                                                            is not None
+                                                        ):
+                                                            os.system(
+                                                                f'start {lessonInfo["data"]["lectureContentsDto"]["lectureContentsMvpDto"]["mvpFileUrlPath"]}'
+                                                            )
+                                                        elif (
+                                                            lessonInfo["data"][
+                                                                "lectureContentsDto"
+                                                            ]["lectureContentsTextDto"]
+                                                            is not None
+                                                        ):
+                                                            num = random.randint(1, 100)
+                                                            with open(
+                                                                f"./assets/{num}.html",
+                                                                "w",
+                                                                encoding="utf-8",
+                                                            ) as f:
+                                                                f.write(
+                                                                    lessonInfo["data"][
+                                                                        "lectureContentsDto"
+                                                                    ][
+                                                                        "lectureContentsTextDto"
+                                                                    ][
+                                                                        "textContents"
+                                                                    ]
+                                                                )
+                                                            os.system(f'start ./assets/{num}.html')
