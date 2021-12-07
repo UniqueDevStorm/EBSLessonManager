@@ -1,9 +1,17 @@
 import os
 import json
-import inquirer
-from dotenv import load_dotenv
 
-from utils import HTTPRequest
+try:
+    import inquirer
+    from dotenv import load_dotenv
+
+    from utils import HTTPRequest
+except ImportError:
+    os.system("pip install -r requirements.txt")
+    import inquirer
+    from dotenv import load_dotenv
+
+    from utils import HTTPRequest
 
 load_dotenv(verbose=True)
 
@@ -207,3 +215,5 @@ while True:
                                 for x in subjectInformations[presentSubjectPage]:
                                     if x["lessonName"] == selectSubject["subject"]:
                                         subjectUrlPath = x["lessonUrlPath"]
+                                        while True:
+                                            pass
