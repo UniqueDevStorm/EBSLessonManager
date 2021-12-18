@@ -1,4 +1,1 @@
-inquirer
-python-dotenv
-requests
-flask
+PyQt5
